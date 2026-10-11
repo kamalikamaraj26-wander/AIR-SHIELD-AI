@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AirShield AI</title>
+<style>
+:root{font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;color:#142236;background:#f3f6fa}
+*{box-sizing:border-box}body{margin:0}header{background:#10243a;color:white;padding:22px max(20px,calc((100vw - 1120px)/2));display:flex;justify-content:space-between;gap:20px;align-items:center;flex-wrap:wrap}
+h1{font-size:24px;margin:0}header p{margin:5px 0 0;color:#c7d4e4;font-size:13px}.pill{border:1px solid #476078;border-radius:999px;padding:7px 10px;font-size:12px}
+main{max-width:1120px;margin:24px auto;padding:0 16px}.notice{background:#fff7df;border:1px solid #eed68c;padding:12px 14px;border-radius:12px;color:#725500;font-size:13px;line-height:1.5;margin-bottom:16px}
+.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.card{background:white;border:1px solid #e1e8f0;border-radius:16px;padding:17px;box-shadow:0 2px 10px #20344d08}
+.label{font-size:12px;color:#607086}.value{font-size:30px;font-weight:750;margin:7px 0}.unit{font-size:12px;color:#607086}.muted{color:#65758a;font-size:13px;line-height:1.5}
+h2{font-size:18px;margin:0 0 12px}.section{margin-top:16px}.split{display:grid;grid-template-columns:1.3fr 1fr;gap:12px}.chart{width:100%;height:220px;display:block}.btn{background:#126b57;color:white;border:0;border-radius:9px;padding:10px 14px;cursor:pointer;font-weight:650}.btn.secondary{background:#e9eff5;color:#20344d}.controls{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.field{display:flex;flex-direction:column;gap:6px;font-size:12px;color:#607086}.field input{width:100%;padding:10px;border:1px solid #d3dce6;border-radius:8px;font:inherit;color:#142236}.scenario{border:1px solid #e1e8f0;border-radius:12px;padding:12px;margin-top:9px}.scenario strong{display:block;margin-bottom:5px}.bar{height:8px;border-radius:8px;background:#e8edf3;overflow:hidden;margin-top:8px}.bar span{height:100%;display:block;background:#169b78}.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.small{font-size:11px;color:#718095}footer{padding:28px 16px;text-align:center;color:#718095;font-size:12px}
+@media(max-width:760px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.split{grid-template-columns:1fr}.controls{grid-template-columns:1fr}header{padding:18px}main{margin-top:16px}.value{font-size:25px}}
+</style></head>
+<body>
+<header><div><h1>AirShield AI</h1><p>Evidence-driven clean-air intervention planning</p></div><span class="pill" id="connection">Connecting…</span></header>
+<main>
+<div class="notice"><b>Prototype notice:</b> Forecasts and intervention curves are experimental estimates, not medical advice or a declaration that a room is safe. Scenario outputs are simulated until verified against measurements.</div>
+<div class="grid">
+ <div class="card"><div class="label">Latest PM2.5</div><div class="value" id="pm">—</div><div class="unit">µg/m³ · latest valid reading</div></div>
+ <div class="card"><div class="label">Sensor status</div><div class="value" id="fresh" style="font-size:22px">Waiting</div><div class="unit" id="freshdetail">No readings received yet</div></div>
+ <div class="card"><div class="label">Valid readings</div><div class="value" id="count">0</div><div class="unit">stored observations</div></div>
+ <div class="card"><div class="label">Short-term estimate</div><div class="value" id="forecast">—</div><div class="unit" id="forecastdetail">Requires at least 5 valid readings</div></div>
+</div>
+<div class="split section">
+ <section class="card"><h2>Recent PM2.5 trend</h2><canvas class="chart" id="chart" aria-label="Recent PM2.5 readings"></canvas><div class="small" id="chartnote">Waiting for sensor or imported data.</div></section>
+ <section class="card"><h2>Data evidence</h2><div id="evidence" class="muted">No readings yet. Send sensor data or import a CSV file.</div><div class="row" style="margin-top:14px"><a class="btn secondary" href="/api/export.csv">Export CSV</a><button class="btn secondary" onclick="document.getElementById('csvfile').click()">Import CSV</button><input id="csvfile" type="file" accept=".csv" hidden></div><div class="small" style="margin-top:8px">CSV columns supported: timestamp_utc, pm25_ugm3; optional device_id, temperature_c, humidity_pct.</div></section>
+</div>
+<section class="card section">
+ <h2>Intervention lab</h2><p class="muted">Adjust the assumptions to compare hypothetical responses. Results are not measured effects.</p>
+ <div class="controls">
+  <label class="field">Current indoor PM2.5 (µg/m³)<input id="current" type="number" min="0" max="5000" value="35"></label>
+  <label class="field">Outdoor PM2.5 (optional)<input id="outdoor" type="number" min="0" max="5000" placeholder="Leave blank if unknown"></label>
+  <label class="field">Scenario duration (minutes)<input id="duration" type="number" min="5" max="240" value="30"></label>
+  <label class="field">Filtration strength (assumption 0–1)<input id="filtration" type="number" min="0" max="1" step=".1" value=".7"></label>
+  <label class="field">Ventilation strength (assumption 0–1)<input id="ventilation" type="number" min="0" max="1" step=".1" value=".3"></label>
+ </div>
+ <div style="margin-top:13px"><button class="btn" id="run">Compare scenarios</button></div>
+ <div id="scenarios" class="muted" style="margin-top:12px">Run the scenario comparison to see results.</div>
+ <div id="scenario-warning" class="small" style="margin-top:10px"></div>
+</section>
+<section class="card section"><h2>How to connect your ESP32</h2><p class="muted">POST a JSON reading to <code>/api/readings</code>. If DEVICE_TOKEN is configured, include the <code>X-Device-Token</code> header.</p><pre style="white-space:pre-wrap;background:#f4f7fa;padding:12px;border-radius:10px;font-size:12px">{
+  "device_id": "indoor_01",
+  "pm25_ugm3": 12.4,
+  "temperature_c": 27.1,
+  "humidity_pct": 62,
+  "source_type": "sensor",
+  "quality_flag": "valid"
+}</pre><p class="small">Keep the API token private. Do not expose an unauthenticated write endpoint to the public internet.</p></section>
+</main><footer>AirShield AI · Hackathon prototype · Clearly distinguish measured, predicted and simulated values.</footer>
+<script>
+let readings=[];
+const $=id=>document.getElementById(id);
+function fmt(x){return x===null||x===undefined?"—":Number(x).toFixed(1)}
+function drawChart(data){
+ const canvas=$("chart"), rect=canvas.getBoundingClientRect(), dpr=window.devicePixelRatio||1;
+ canvas.width=Math.max(300,rect.width)*dpr;canvas.height=220*dpr;
+ const ctx=canvas.getContext("2d");ctx.scale(dpr,dpr);
+ const w=canvas.width/dpr,h=canvas.height/dpr,p=28;
+ ctx.clearRect(0,0,w,h);
+ if(!data.length){ctx.fillStyle="#718095";ctx.font="13px sans-serif";ctx.fillText("No data yet",p,40);return}
+ const vals=data.map(r=>Number(r.pm25_ugm3)), max=Math.max(10,...vals)*1.15,min=0;
+ ctx.strokeStyle="#e5ebf2";ctx.lineWidth=1;
+ for(let i=0;i<4;i++){let y=p+(h-2*p)*i/3;ctx.beginPath();ctx.moveTo(p,y);ctx.lineTo(w-p,y);ctx.stroke()}
+ ctx.strokeStyle="#12866c";ctx.lineWidth=2.5;ctx.beginPath();
+ vals.forEach((v,i)=>{let x=p+(w-2*p)*(vals.length===1?.5:i/(vals.length-1)),y=h-p-(v-min)/(max-min)*(h-2*p);if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y)});
+ ctx.stroke();ctx.fillStyle="#12866c";
+ vals.forEach((v,i)=>{let x=p+(w-2*p)*(vals.length===1?.5:i/(vals.length-1)),y=h-p-(v-min)/(max-min)*(h-2*p);ctx.beginPath();ctx.arc(x,y,3,0,Math.PI*2);ctx.fill()});
+ ctx.fillStyle="#718095";ctx.font="11px sans-serif";ctx.fillText(max.toFixed(0)+" µg/m³",p,14);ctx.fillText("0",p,h-5);
+}
+async function refresh(){
+ try{
+  const [sr,rr,fr]=await Promise.all([fetch("/api/summary"),fetch("/api/readings?limit=120"),fetch("/api/forecast")]);
+  const s=await sr.json(),r=await rr.json(),f=await fr.json();readings=r.readings||[];
+  $("connection").textContent="API connected";$("connection").style.color="#b7f7d8";
+  $("count").textContent=s.count||0;
+  if(s.latest){$("pm").textContent=fmt(s.latest.pm25_ugm3);$("fresh").textContent=s.data_status==="fresh"?"Fresh":"Stale";$("freshdetail").textContent=`Last reading ${Math.round(s.freshness_seconds)} seconds ago · ${s.latest.device_id}`;$("evidence").innerHTML=`Latest source: <b>${s.latest.source_type}</b><br>Timestamp: ${s.latest.timestamp_utc}<br>Device: ${s.latest.device_id}<br>Mean of valid stored readings: ${fmt(s.mean_pm25)} µg/m³<br>Freshness: ${s.data_status}`;}
+  else{$("pm").textContent="—";$("fresh").textContent="Waiting";$("freshdetail").textContent="No readings received yet";$("evidence").textContent="No readings yet. Send sensor data or import a CSV file."}
+  if(f.ready){$("forecast").textContent=fmt(f.ml_estimate);$("forecastdetail").textContent=`1-minute prototype estimate · baseline ${fmt(f.baseline)} · n=${f.n_readings}`;$("chartnote").textContent=f.warning;}
+  else{$("forecast").textContent="—";$("forecastdetail").textContent=f.message}
+  drawChart(readings.slice(-60));
+ }catch(e){$("connection").textContent="API unavailable";$("connection").style.color="#ffd2d2"}
+}
+$("run").addEventListener("click",async()=>{
+ const body={current_pm25:Number($("current").value),outdoor_pm25:$("outdoor").value===""?null:Number($("outdoor").value),duration_minutes:Number($("duration").value),filtration_strength:Number($("filtration").value),ventilation_strength:Number($("ventilation").value)};
+ const target=$("scenarios");target.textContent="Calculating…";
+ try{const res=await fetch("/api/scenarios",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});const data=await res.json();if(!res.ok)throw new Error(data.detail||"Invalid input");
+ const min=Math.min(...data.scenarios.map(s=>s.predicted_pm25)),max=Math.max(...data.scenarios.map(s=>s.predicted_pm25));
+ target.innerHTML=data.scenarios.map(s=>`<div class="scenario"><strong>${s.name}</strong><span>${fmt(s.predicted_pm25)} µg/m³ (simulated)</span><div class="bar"><span style="width:${max===min?100:Math.max(3,100*(s.predicted_pm25-min)/(max-min))}%"></span></div><div class="small">${s.assumption}</div></div>`).join("");
+ $("scenario-warning").textContent=data.warning;
+ }catch(e){target.textContent="Scenario error: "+e.message}
+});
+$("csvfile").addEventListener("change",async e=>{
+ const file=e.target.files[0];if(!file)return;const fd=new FormData();fd.append("file",file);
+ try{const r=await fetch("/api/upload-csv",{method:"POST",body:fd}),d=await r.json();if(!r.ok)throw new Error(d.detail||"Upload failed");alert(`Imported ${d.inserted} rows`);refresh()}catch(err){alert("CSV import failed: "+err.message)}finally{e.target.value=""}
+});
+window.addEventListener("resize",()=>drawChart(readings.slice(-60)));
+refresh();setInterval(refresh,5000);
+</script></body></html>
